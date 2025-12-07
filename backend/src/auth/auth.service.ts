@@ -4,7 +4,9 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { PrismaService } from '../prisma.service'; // Ajuste o caminho conforme sua estrutura
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User, Role } from '../users/user.entity'; // Importamos Role também
 import * as bcrypt from 'bcrypt';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -12,12 +14,13 @@ import { LoginDto } from './dto/login.dto';
 @Injectable()
 export class AuthService {
   constructor(
-    private prisma: PrismaService,
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
     private jwtService: JwtService,
   ) {}
 
   async register(data: RegisterDto) {
-    const userExists = await this.prisma.user.findUnique({
+    const userExists = await this.usersRepository.findOne({
       where: { email: data.email },
     });
 
@@ -28,23 +31,25 @@ export class AuthService {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(data.password, salt);
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: data.email,
-        name: data.name,
-        password: hashedPassword,
-        role: 'USER', // Define padrão como usuário comum
-      },
+    // Cria a instância usando o método create do repositório
+    const newUser = this.usersRepository.create({
+      name: data.name,
+      email: data.email,
+      password: hashedPassword,
+      role: Role.USER, // Usa o Enum explicitamente para evitar erro de tipo
     });
 
-    // Remove a senha do objeto retornado
+    // Salva no banco. O método save retorna a entidade completa (User)
+    const savedUser = await this.usersRepository.save(newUser);
+
+    // Remove a senha do retorno
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, ...result } = user;
+    const { password, ...result } = savedUser;
     return result;
   }
 
   async login(data: LoginDto) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.usersRepository.findOne({
       where: { email: data.email },
     });
 
